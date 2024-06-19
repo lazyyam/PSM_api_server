@@ -1,14 +1,22 @@
 <?php
-$host = 'localhost';
-$db_user = 'root';  // Adjust this according to your MySQL settings
-$db_password = '';  // Adjust this according to your MySQL settings
-$db_name = 'psm_database';
+// config.php
+class Database {
+    private $host = "localhost";
+    private $db_name = "psm_database";
+    private $username = "root";
+    private $password = "";
+    public $conn;
+    public function getConnection() {
+        $this->conn = null;
 
-// Create connection
-$conn = new mysqli($host, $db_user, $db_password, $db_name);
+        try {
+            $this->conn = new PDO("mysql:host=" . $this->host . ";dbname=" . $this->db_name, $this->username, $this->password);
+            $this->conn->exec("set names utf8");
+        } catch (PDOException $exception) {
+            echo "Connection error: " . $exception->getMessage();
+        }
 
-// Check connection
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
+        return $this->conn;
+    }
 }
 ?>

@@ -6,10 +6,26 @@
 }
 
 {
+  "username": "zhan",
+  "email": "zhan@gmail.com",
+  "password": "111111",
+  "confirmPassword": "111111"
+}
+
+{
   "username": "lecturer1",
   "email": "lecturer1@gmail.com",
   "password": "lecturer1",
   "confirmPassword": "lecturer1"
+}
+
+{
+  "username": "yamzhan",
+  "fullname": "Yam Yuan Zhan",
+  "address": "20, Taman Jementah",
+  "city" : "segamat",
+  "country": "Malaysia",
+  "postcode": "85200"
 }
 
 now can u update my UserProfile.vue, UserCard.vue, and EditProfileForm.vue
