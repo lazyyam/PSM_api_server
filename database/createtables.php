@@ -1,6 +1,15 @@
 <?php
 include 'config.php';
 
+// Create an instance of the Database class
+$database = new Database();
+$conn = $database->getConnection();
+
+// Check connection
+if ($conn === false) {
+    die("Connection failed: Unable to connect to the database.");
+}
+
 // SQL to create tables
 $sql = "
 CREATE TABLE IF NOT EXISTS users (
@@ -23,11 +32,14 @@ INSERT INTO users (username, email, password, role)
 VALUES ('lecturer1', 'lecturer1@gmail.com', '".password_hash('lecturer1', PASSWORD_DEFAULT)."', 'lecturer');
 ";
 
-if ($conn->multi_query($sql) === TRUE) {
+try {
+    // Execute SQL query
+    $conn->exec($sql);
     echo "Tables created successfully";
-} else {
-    echo "Error creating tables: " . $conn->error;
+} catch(PDOException $e) {
+    echo "Error creating tables: " . $e->getMessage();
 }
 
-$conn->close();
+// Close the connection
+$conn = null;
 ?>
