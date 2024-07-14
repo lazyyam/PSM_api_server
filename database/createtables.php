@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS users (
 -- Insert default lecturer user
 INSERT INTO users (username, email, password, role)
 VALUES ('lecturer1', 'lecturer1@gmail.com', '".password_hash('lecturer1', PASSWORD_DEFAULT)."', 'lecturer');
+
+CREATE TABLE IF NOT EXISTS meetings (
+    id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    Mtitle VARCHAR(255) NOT NULL,
+    Mdate DATETIME NOT NULL,
+    Mduration VARCHAR(50) NOT NULL,
+    Mlocation VARCHAR(255) NOT NULL,
+    Mdescription TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
 ";
 
 try {
