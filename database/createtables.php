@@ -29,21 +29,19 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Insert default lecturer user
 INSERT INTO users (username, email, password, role)
-VALUES ('lecturer1', 'lecturer1@gmail.com', '" . password_hash('lecturer1', PASSWORD_DEFAULT) . "', 'lecturer');
+VALUES ('lecturer1', 'lecturer1@gmail.com', '".password_hash('lecturer1', PASSWORD_DEFAULT)."', 'lecturer');
 
-CREATE TABLE IF NOT EXISTS assignments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    set_time DATETIME NOT NULL,
-    due_date DATETIME NOT NULL,
-    description TEXT NOT NULL,
-    remaining_time VARCHAR(255) NOT NULL,
-    file BLOB NULL
+CREATE TABLE IF NOT EXISTS meetings (
+    id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    Mtitle VARCHAR(255) NOT NULL,
+    Mdate DATETIME NOT NULL,
+    Mduration VARCHAR(50) NOT NULL,
+    Mlocation VARCHAR(255) NOT NULL,
+    Mdescription TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
-
--- Insert sample assignment
-INSERT INTO assignments (name, set_time, due_date, description, remaining_time, file_url)
-VALUES ('Sample Assignment', '2024-07-06 10:00:00', '2024-07-20 23:59:59', 'This is a sample assignment description.', '14 days', NULL)";
+";
 
 try {
     // Execute SQL query
