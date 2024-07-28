@@ -23,11 +23,54 @@ $container['db'] = function () {
 
 // Get all assignments
 $app->get('/getassignmentlist', function ($request, $response, $args) {
-    $sql = "SELECT * FROM assignments";
+$sql = "SELECT id, name, set_time, due_date, description, remaining_time, 
+        file_name, 
+        CASE WHEN file_name IS NOT NULL THEN CONCAT('/downloadfile/', id) ELSE NULL END AS file_url
+        FROM assignments";
     try {
         $stmt = $this->db->query($sql);
         $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Debugging: Log the fetched assignments
+        file_put_contents('php://stderr', print_r($assignments, true));
+
         return $response->withJson($assignments);
+    } catch (PDOException $e) {
+        // Debugging: Log the error
+        file_put_contents('php://stderr', "Database error: " . $e->getMessage());
+        return $response->withJson(["error" => "Database error: " . $e->getMessage()], 500);
+    }
+});
+
+// Download file
+$app->get('/downloadfile/{id}', function ($request, $response, $args) {
+    $id = $args['id'];
+
+    // Fetch the file and its name from the database
+    $sql = "SELECT file, file_name FROM assignments WHERE id = :id";
+    try {
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindParam(':id', $id);
+        $stmt->execute();
+
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($result) {
+            $fileContent = $result['file'];
+            $fileName = $result['file_name'];
+
+            if (empty($fileName)) {
+                $fileName = 'default_filename'; // Fallback file name
+            }
+
+            $response = $response
+                ->withHeader('Content-Type', 'application/octet-stream')
+                ->withHeader('Content-Disposition', 'attachment; filename="' . $fileName . '"')
+                ->write($fileContent);
+
+            return $response;
+        } else {
+            return $response->withJson(["error" => "File not found"], 404);
+        }
     } catch (PDOException $e) {
         return $response->withJson(["error" => "Database error: " . $e->getMessage()], 500);
     }
@@ -38,15 +81,27 @@ $app->post('/createassignment', function ($request, $response, $args) {
     $data = $request->getParsedBody();
     $uploadedFile = $request->getUploadedFiles()['file'] ?? null; // Fetch uploaded file, if any
 
-    // Move the uploaded file and get its new path
-    $file = null;
-    if ($uploadedFile) {
-        $directory = __DIR__ . '/uploads'; // Specify your upload directory
-        $file = moveUploadedFile($directory, $uploadedFile);
+    // Validate input data
+    if (empty($data['name']) || empty($data['set_time']) || empty($data['due_date']) || empty($data['description']) || empty($data['remaining_time'])) {
+        return $response->withJson(["error" => "Missing required fields"], 400);
     }
 
-    $sql = "INSERT INTO assignments (name, set_time, due_date, description, remaining_time, file) 
-            VALUES (:name, :set_time, :due_date, :description, :remaining_time, :file)";
+    $fileContent = null;
+    if ($uploadedFile) {
+        // Check if the file's MIME type is allowed
+        $allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+        $fileMimeType = $uploadedFile->getClientMediaType();
+        if (in_array($fileMimeType, $allowedMimeTypes)) {
+            $fileContent = $uploadedFile->getStream()->getContents(); // Read file content
+            $fileName = $uploadedFile->getClientFilename(); // Get original file name
+        } else {
+            return $response->withJson(["error" => "Invalid file type"], 400);
+        }
+    }
+
+    $sql = "INSERT INTO assignments (name, set_time, due_date, description, remaining_time, file_name, file) 
+    VALUES (:name, :set_time, :due_date, :description, :remaining_time, :file_name, :file)";
+
     try {
         $stmt = $this->db->prepare($sql);
         $stmt->bindParam(':name', $data['name']);
@@ -54,7 +109,14 @@ $app->post('/createassignment', function ($request, $response, $args) {
         $stmt->bindParam(':due_date', $data['due_date']);
         $stmt->bindParam(':description', $data['description']);
         $stmt->bindParam(':remaining_time', $data['remaining_time']);
-        $stmt->bindParam(':file', $file); // Use the file path/name here
+        $stmt->bindParam(':file_name', $fileName);
+
+        if ($fileContent !== null) {
+            $stmt->bindParam(':file', $fileContent, PDO::PARAM_LOB); // Store file content as BLOB
+        } else {
+            // If no file is uploaded, bind a NULL value
+            $stmt->bindValue(':file', null, PDO::PARAM_LOB);
+        }
 
         if ($stmt->execute()) {
             $data['id'] = $this->db->lastInsertId();
@@ -68,83 +130,64 @@ $app->post('/createassignment', function ($request, $response, $args) {
 });
 
 // Update assignment
-$app->put('/updateassignment/{id}', function ($request, $response, $args) {
+$app->post('/updateassignment/{id}', function ($request, $response, $args) {
     $id = $args['id'];
-    $data = $request->getParsedBody();
+    $parsedBody = $request->getParsedBody();
+    $uploadedFiles = $request->getUploadedFiles();
+    $uploadedFile = $uploadedFiles['file'] ?? null;
 
-    // Initialize an array to store the SET clauses for the SQL query
-    $setClauses = [];
-
-    // Check which fields are present in the request and add them to the SET clauses
-    if (!empty($data['name'])) {
-        $setClauses[] = 'name = :name';
-    }
-    if (!empty($data['set_time'])) {
-        $setClauses[] = 'set_time = :set_time';
-    }
-    if (!empty($data['due_date'])) {
-        $setClauses[] = 'due_date = :due_date';
-    }
-    if (!empty($data['description'])) {
-        $setClauses[] = 'description = :description';
-    }
-    if (!empty($data['remaining_time'])) {
-        $setClauses[] = 'remaining_time = :remaining_time';
-    }
-    if (!empty($data['file'])) {
-        $setClauses[] = 'file = :file';
+    // Validate input data
+    if (empty($parsedBody['name']) || empty($parsedBody['set_time']) || empty($parsedBody['due_date']) || empty($parsedBody['description']) || empty($parsedBody['remaining_time'])) {
+        return $response->withJson(["error" => "Missing required fields"], 400);
     }
 
-    // Validate if any fields were provided for update
-    if (empty($setClauses)) {
-        return $response->withJson(["error" => "No fields provided for update"], 400);
-    }
-
-    // Construct the SET clause for the SQL query
-    $setClause = implode(', ', $setClauses);
-
-    // Construct the SQL query
-    $sql = "UPDATE assignments SET $setClause WHERE id = :id";
-
+    // Fetch existing assignment data
+    $sql = "SELECT file_name FROM assignments WHERE id = :id";
     try {
         $stmt = $this->db->prepare($sql);
-
-        // Bind parameters for fields that are present in the request
-        if (!empty($data['name'])) {
-            $stmt->bindParam(':name', $data['name']);
-        }
-        if (!empty($data['set_time'])) {
-            $stmt->bindParam(':set_time', $data['set_time']);
-        }
-        if (!empty($data['due_date'])) {
-            $stmt->bindParam(':due_date', $data['due_date']);
-        }
-        if (!empty($data['description'])) {
-            $stmt->bindParam(':description', $data['description']);
-        }
-        if (!empty($data['remaining_time'])) {
-            $stmt->bindParam(':remaining_time', $data['remaining_time']);
-        }
-        if (!empty($data['file'])) {
-            // Handle file upload - move file to desired directory and store path in database
-            $directory = __DIR__ . '/uploads';
-            $file = moveUploadedFile($directory, $data['file']);
-            $stmt->bindParam(':file', $file);
-        }
-
-        // Bind the assignment ID parameter
         $stmt->bindParam(':id', $id);
+        $stmt->execute();
+        $existingAssignment = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        // Execute the query
+        if (!$existingAssignment) {
+            return $response->withJson(["error" => "Assignment not found"], 404);
+        }
+
+        $fileContent = null;
+        $fileName = $existingAssignment['file_name'];
+
+        if ($uploadedFile) {
+            $allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+            $fileMimeType = $uploadedFile->getClientMediaType();
+            if (in_array($fileMimeType, $allowedMimeTypes)) {
+                $fileContent = $uploadedFile->getStream()->getContents();
+                $fileName = $uploadedFile->getClientFilename();
+            } else {
+                return $response->withJson(["error" => "Invalid file type"], 400);
+            }
+        }
+
+        $sql = "UPDATE assignments 
+                SET name = :name, set_time = :set_time, due_date = :due_date, description = :description, remaining_time = :remaining_time, file_name = :file_name, file = :file
+                WHERE id = :id";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindParam(':id', $id);
+        $stmt->bindParam(':name', $parsedBody['name']);
+        $stmt->bindParam(':set_time', $parsedBody['set_time']);
+        $stmt->bindParam(':due_date', $parsedBody['due_date']);
+        $stmt->bindParam(':description', $parsedBody['description']);
+        $stmt->bindParam(':remaining_time', $parsedBody['remaining_time']);
+        $stmt->bindParam(':file_name', $fileName);
+
+        if ($fileContent !== null) {
+            $stmt->bindParam(':file', $fileContent, PDO::PARAM_LOB);
+        } else {
+            $stmt->bindValue(':file', null, PDO::PARAM_LOB);
+        }
+
         if ($stmt->execute()) {
-            // Fetch updated assignment data
-            $sqlFetch = "SELECT * FROM assignments WHERE id = :id";
-            $stmtFetch = $this->db->prepare($sqlFetch);
-            $stmtFetch->bindParam(':id', $id);
-            $stmtFetch->execute();
-            $updatedAssignment = $stmtFetch->fetch(PDO::FETCH_ASSOC);
-
-            return $response->withJson($updatedAssignment);
+            return $response->withJson(["message" => "Assignment updated successfully", "data" => $parsedBody]);
         } else {
             return $response->withJson(["error" => "Error updating assignment"], 500);
         }

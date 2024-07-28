@@ -27,9 +27,10 @@ CREATE TABLE IF NOT EXISTS users (
     reg_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert default lecturer user
+-- Insert the default lecturer user if the username 'lecturer1' does not exist
 INSERT INTO users (username, email, password, role)
-VALUES ('lecturer1', 'lecturer1@gmail.com', '".password_hash('lecturer1', PASSWORD_DEFAULT)."', 'lecturer');
+SELECT 'lecturer1', 'lecturer1@gmail.com', '".password_hash('lecturer1', PASSWORD_DEFAULT)."', 'lecturer'
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'lecturer1');
 
 CREATE TABLE IF NOT EXISTS meetings (
     id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -42,27 +43,31 @@ CREATE TABLE IF NOT EXISTS meetings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+-- Create the assignments table
 CREATE TABLE IF NOT EXISTS assignments (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    set_time DATETIME NOT NULL,
-    due_date DATETIME NOT NULL,
+    set_time VARCHAR(255) NOT NULL,
+    due_date VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
-    remaining_time VARCHAR(255) NOT NULL,
-    file_url VARCHAR(255) NULL
+    remaining_time VARCHAR(255),
+    file_name VARCHAR(255),
+    file LONGBLOB
 );
 
+-- newest grades table
 CREATE TABLE IF NOT EXISTS grades (
-    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    assignment_id INT UNSIGNED NOT NULL,
-    student_id INT UNSIGNED NOT NULL,
+    id INT(6) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    assignment_id INT UNSIGNED ,
+    student_id INT UNSIGNED,
     grading_status BOOLEAN NOT NULL DEFAULT 0,
-    submission_file_url VARCHAR(255) NULL,
-    grade VARCHAR(255) NULL,
-    submittedtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    file_name VARCHAR(255),
+    file LONGBLOB,
+    grade VARCHAR(255),
     FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
 ";
 
 try {
