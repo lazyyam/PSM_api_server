@@ -23,10 +23,10 @@ $container['db'] = function () {
 
 // Get all assignments
 $app->get('/getassignmentlist', function ($request, $response, $args) {
-$sql = "SELECT id, name, set_time, due_date, description, remaining_time, 
-        file_name, 
-        CASE WHEN file_name IS NOT NULL THEN CONCAT('/downloadfile/', id) ELSE NULL END AS file_url
-        FROM assignments";
+    $sql = "SELECT id, name, set_time, due_date, description, file_name, 
+            CASE WHEN file_name IS NOT NULL THEN CONCAT('/downloadfile/', id) ELSE NULL END AS file_url,
+            TIMESTAMPDIFF(SECOND, NOW(), due_date) AS remaining_time_seconds
+            FROM assignments";
     try {
         $stmt = $this->db->query($sql);
         $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -82,7 +82,7 @@ $app->post('/createassignment', function ($request, $response, $args) {
     $uploadedFile = $request->getUploadedFiles()['file'] ?? null; // Fetch uploaded file, if any
 
     // Validate input data
-    if (empty($data['name']) || empty($data['set_time']) || empty($data['due_date']) || empty($data['description']) || empty($data['remaining_time'])) {
+    if (empty($data['name']) || empty($data['set_time']) || empty($data['due_date']) || empty($data['description']) ) {
         return $response->withJson(["error" => "Missing required fields"], 400);
     }
 
@@ -99,8 +99,8 @@ $app->post('/createassignment', function ($request, $response, $args) {
         }
     }
 
-    $sql = "INSERT INTO assignments (name, set_time, due_date, description, remaining_time, file_name, file) 
-    VALUES (:name, :set_time, :due_date, :description, :remaining_time, :file_name, :file)";
+    $sql = "INSERT INTO assignments (name, set_time, due_date, description, file_name, file) 
+    VALUES (:name, :set_time, :due_date, :description, :file_name, :file)";
 
     try {
         $stmt = $this->db->prepare($sql);
@@ -108,9 +108,14 @@ $app->post('/createassignment', function ($request, $response, $args) {
         $stmt->bindParam(':set_time', $data['set_time']);
         $stmt->bindParam(':due_date', $data['due_date']);
         $stmt->bindParam(':description', $data['description']);
-        $stmt->bindParam(':remaining_time', $data['remaining_time']);
         $stmt->bindParam(':file_name', $fileName);
 
+        if ($fileName !== null) {
+            $stmt->bindParam(':file_name', $fileName);
+        } else {
+            $stmt->bindValue(':file_name', null, PDO::PARAM_NULL);
+        }
+        
         if ($fileContent !== null) {
             $stmt->bindParam(':file', $fileContent, PDO::PARAM_LOB); // Store file content as BLOB
         } else {
@@ -137,7 +142,7 @@ $app->post('/updateassignment/{id}', function ($request, $response, $args) {
     $uploadedFile = $uploadedFiles['file'] ?? null;
 
     // Validate input data
-    if (empty($parsedBody['name']) || empty($parsedBody['set_time']) || empty($parsedBody['due_date']) || empty($parsedBody['description']) || empty($parsedBody['remaining_time'])) {
+    if (empty($parsedBody['name']) || empty($parsedBody['set_time']) || empty($parsedBody['due_date']) || empty($parsedBody['description']) ) {
         return $response->withJson(["error" => "Missing required fields"], 400);
     }
 
@@ -168,7 +173,7 @@ $app->post('/updateassignment/{id}', function ($request, $response, $args) {
         }
 
         $sql = "UPDATE assignments 
-                SET name = :name, set_time = :set_time, due_date = :due_date, description = :description, remaining_time = :remaining_time, file_name = :file_name, file = :file
+                SET name = :name, set_time = :set_time, due_date = :due_date, description = :description, file_name = :file_name, file = :file
                 WHERE id = :id";
 
         $stmt = $this->db->prepare($sql);
@@ -177,7 +182,6 @@ $app->post('/updateassignment/{id}', function ($request, $response, $args) {
         $stmt->bindParam(':set_time', $parsedBody['set_time']);
         $stmt->bindParam(':due_date', $parsedBody['due_date']);
         $stmt->bindParam(':description', $parsedBody['description']);
-        $stmt->bindParam(':remaining_time', $parsedBody['remaining_time']);
         $stmt->bindParam(':file_name', $fileName);
 
         if ($fileContent !== null) {

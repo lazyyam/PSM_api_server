@@ -50,7 +50,6 @@ CREATE TABLE IF NOT EXISTS assignments (
     set_time VARCHAR(255) NOT NULL,
     due_date VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
-    remaining_time VARCHAR(255),
     file_name VARCHAR(255),
     file LONGBLOB
 );
