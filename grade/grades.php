@@ -3,8 +3,6 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: X-Requested-With, Content-Type, Accept, Origin, Authorization");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 
-use \Firebase\JWT\JWT;
-
 require '../vendor/autoload.php';
 require_once '../config.php';
 
@@ -16,73 +14,90 @@ $container['db'] = function () {
     return $database->getConnection();
 };
 
-// Get all submissions for a specific assignment
+// Endpoint to fetch submissions for a specific assignment
 $app->get('/submissions', function ($request, $response, $args) {
-    $assignmentId = $request->getParam('assignmentId');
-    $sql = "SELECT g.student_id, u.username as studentName, g.submission_file_url as file_url, g.grade, g.submittedtime
+    $assignmentId = $request->getQueryParams()['assignment_id'];
+    if (!$assignmentId) {
+        return $response->withJson(["error" => "Assignment ID is required"], 400);
+    }
+
+    $sql = "SELECT g.id, g.assignment_id, g.student_id, g.grading_status, g.file_name, g.grade,
+                   u.username as student_name,
+            CASE WHEN g.file_name IS NOT NULL THEN CONCAT('/submissions/', g.file_name) ELSE NULL END AS file_url
             FROM grades g
-            JOIN users u ON g.student_id = u.id
-            WHERE g.assignment_id = :assignmentId";
+            LEFT JOIN users u ON g.student_id = u.id
+            WHERE g.assignment_id = :assignment_id";
+
     try {
         $stmt = $this->db->prepare($sql);
-        $stmt->bindParam(':assignmentId', $assignmentId);
+        $stmt->bindParam(':assignment_id', $assignmentId);
         $stmt->execute();
         $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return $response->withJson($submissions);
     } catch (PDOException $e) {
-        return $response->withJson(["success" => false, "message" => $e->getMessage()])->withStatus(500);
+        return $response->withJson(["error" => "Database error: " . $e->getMessage()], 500);
     }
 });
 
-
-// Submit or update grade for a specific student submission
+// Endpoint to update the grade for a specific student and assignment
 $app->post('/grades', function ($request, $response, $args) {
-    $data = $request->getParsedBody();
-    $assignmentId = $data['assignment_id'];
-    $studentId = $data['student_id'];
-    $grade = $data['grade'];
+    $data = json_decode($request->getBody(), true);
 
-    $sql = "UPDATE grades SET grade = :grade, submittedtime = NOW(), grading_status=1
+    $sql = "UPDATE grades SET grade = :grade, grading_status = :grading_status 
             WHERE assignment_id = :assignment_id AND student_id = :student_id";
+
     try {
         $stmt = $this->db->prepare($sql);
-        $stmt->bindParam(':assignment_id', $assignmentId);
-        $stmt->bindParam(':student_id', $studentId);
-        $stmt->bindParam(':grade', $grade);
+        $stmt->bindParam(':grade', $data['grade']);
+        $stmt->bindParam(':grading_status', $data['grading_status']);
+        $stmt->bindParam(':assignment_id', $data['assignment_id']);
+        $stmt->bindParam(':student_id', $data['student_id']);
         $stmt->execute();
-        return $response->withJson(["success" => true, "message" => "Grade submitted successfully"]);
+        
+        return $response->withJson(["message" => "Grade was updated."]);
     } catch (PDOException $e) {
-        return $response->withJson(["success" => false, "message" => $e->getMessage()])->withStatus(500);
+        return $response->withJson(["error" => "Database error: " . $e->getMessage()], 500);
     }
 });
 
-// Get assignments for a specific user
-$app->get('/assignments', function ($request, $response, $args) {
-    $userId = $request->getParam('userId');
-    $sql = "SELECT a.id, a.name, 
-                   CASE 
-                       WHEN g.grading_status = 0 THEN 'Submitted'
-                       WHEN g.grading_status = 1 THEN 'Graded'
-                       ELSE 'Pending'
-                   END as status
-            FROM assignments a
-            LEFT JOIN grades g ON a.id = g.assignment_id AND g.student_id = :userId
-            WHERE g.student_id = :userId OR g.student_id IS NULL
-            ORDER BY CASE 
-                        WHEN g.grading_status = 0 THEN 1
-                        WHEN g.grading_status = 1 THEN 2
-                        ELSE 3
-                     END ASC";
+// Endpoint to download a file associated with a specific assignment
+$app->get('/downloadfile/{file_name}', function ($request, $response, $args) {
+    $fileName = $args['file_name'];
+    $filePath = '../uploads/' . $fileName;
+
+    if (file_exists($filePath)) {
+        return $response->withHeader('Content-Description', 'File Transfer')
+                        ->withHeader('Content-Type', 'application/octet-stream')
+                        ->withHeader('Content-Disposition', 'attachment; filename="'.basename($filePath).'"')
+                        ->withHeader('Expires', '0')
+                        ->withHeader('Cache-Control', 'must-revalidate')
+                        ->withHeader('Pragma', 'public')
+                        ->withHeader('Content-Length', filesize($filePath))
+                        ->write(file_get_contents($filePath));
+    } else {
+        return $response->withJson(["error" => "File not found"], 404);
+    }
+});
+
+$app->get('/submissionsstudent', function ($request, $response, $args) {
+    $userId = $request->getQueryParam('userId');
+    if (!$userId) {
+        return $response->withJson(["error" => "User ID is required"], 400);
+    }
+
+    $sql = "SELECT g.id, a.name AS assignment_name, g.grading_status, g.grade
+            FROM grades g
+            JOIN assignments a ON g.assignment_id = a.id
+            WHERE g.student_id = :userId";
     try {
         $stmt = $this->db->prepare($sql);
-        $stmt->bindParam(':userId', $userId, PDO::PARAM_INT);
+        $stmt->bindParam(':userId', $userId);
         $stmt->execute();
-        $assignments = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        return $response->withJson($assignments);
+        $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $response->withJson($submissions);
     } catch (PDOException $e) {
-        return $response->withJson(["success" => false, "message" => $e->getMessage()])->withStatus(500);
+        return $response->withJson(["error" => "Database error: " . $e->getMessage()], 500);
     }
 });
 
 $app->run();
-?>
