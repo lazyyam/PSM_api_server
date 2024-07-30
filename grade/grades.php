@@ -15,14 +15,11 @@ $container['db'] = function () {
 };
 
 // Endpoint to fetch submissions for a specific assignment
-$app->get('/submissions', function ($request, $response, $args) {
-    $assignmentId = $request->getQueryParams()['assignment_id'];
-    if (!$assignmentId) {
-        return $response->withJson(["error" => "Assignment ID is required"], 400);
-    }
+$app->get('/submissions/{assignmentId}', function ($request, $response, $args) {
+    $assignmentId = $args['assignmentId'];
 
     $sql = "SELECT g.id, g.assignment_id, g.student_id, g.grading_status, g.file_name, g.grade,
-                   u.username as student_name,
+            u.username as student_name,
             CASE WHEN g.file_name IS NOT NULL THEN CONCAT('/submissions/', g.file_name) ELSE NULL END AS file_url
             FROM grades g
             LEFT JOIN users u ON g.student_id = u.id
@@ -60,38 +57,49 @@ $app->post('/grades', function ($request, $response, $args) {
     }
 });
 
-// Endpoint to download a file associated with a specific assignment
-$app->get('/downloadfile/{file_name}', function ($request, $response, $args) {
-    $fileName = $args['file_name'];
-    $filePath = '../uploads/' . $fileName;
+$app->get('/downloadsubmission/{id}', function ($request, $response, $args) {
+    $id = $args['id'];
 
-    if (file_exists($filePath)) {
-        return $response->withHeader('Content-Description', 'File Transfer')
-                        ->withHeader('Content-Type', 'application/octet-stream')
-                        ->withHeader('Content-Disposition', 'attachment; filename="'.basename($filePath).'"')
-                        ->withHeader('Expires', '0')
-                        ->withHeader('Cache-Control', 'must-revalidate')
-                        ->withHeader('Pragma', 'public')
-                        ->withHeader('Content-Length', filesize($filePath))
-                        ->write(file_get_contents($filePath));
-    } else {
-        return $response->withJson(["error" => "File not found"], 404);
+    // Fetch the file and its name from the database
+    $sql = "SELECT file, file_name FROM grades WHERE id = :id";
+    try {
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindParam(':id', $id);
+        $stmt->execute();
+
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($result) {
+            $fileContent = $result['file'];
+            $fileName = $result['file_name'];
+
+            if (empty($fileName)) {
+                $fileName = 'default_filename'; // Fallback file name
+            }
+
+            $response = $response
+                ->withHeader('Content-Type', 'application/octet-stream')
+                ->withHeader('Content-Disposition', 'attachment; filename="' . $fileName . '"')
+                ->write($fileContent);
+
+            return $response;
+        } else {
+            return $response->withJson(["error" => "File not found"], 404);
+        }
+    } catch (PDOException $e) {
+        return $response->withJson(["error" => "Database error: " . $e->getMessage()], 500);
     }
 });
 
-$app->get('/submissionsstudent', function ($request, $response, $args) {
-    $userId = $request->getQueryParam('userId');
-    if (!$userId) {
-        return $response->withJson(["error" => "User ID is required"], 400);
-    }
+$app->get('/submissionsstudent/{student_id}', function ($request, $response, $args) {
+    $studentId = $args['student_id'];
 
     $sql = "SELECT g.id, a.name AS assignment_name, g.grading_status, g.grade
             FROM grades g
             JOIN assignments a ON g.assignment_id = a.id
-            WHERE g.student_id = :userId";
+            WHERE g.student_id = :student_id";
     try {
         $stmt = $this->db->prepare($sql);
-        $stmt->bindParam(':userId', $userId);
+        $stmt->bindParam(':student_id', $studentId);
         $stmt->execute();
         $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
         return $response->withJson($submissions);
